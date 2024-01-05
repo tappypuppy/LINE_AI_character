@@ -1,6 +1,7 @@
 from flask import Flask, request, abort
 import openai
 import os
+import re
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
@@ -45,6 +46,7 @@ from linebot.v3.messaging import (
     ApiClient,
     MessagingApi,
     ReplyMessageRequest,
+    PushMessageRequest,
     TextMessage
 )
 from linebot.v3.webhooks import (
@@ -113,8 +115,9 @@ def handle_message(event):
     messages_for_gpt.append({"role": "user", "content": prompt})
     
     client = openai.OpenAI(api_key=api_key)
+    gpt_model = "gpt-4"
     response = client.chat.completions.create(
-                        model = "gpt-3.5-turbo-16k-0613",
+                        model = gpt_model,
                         messages = messages_for_gpt,
                         temperature=0,
                     )
@@ -126,15 +129,27 @@ def handle_message(event):
     # 受信したメッセージをデータベースに保存
     save_message(userId, timestamp, prompt, reply_message)
 
+    # send message
+    reply_message_list = split_string_and_newline(reply_message)
+    send_message_list = [TextMessage(text=reply_message_item) for reply_message_item in reply_message_list]
+
+    if len(send_message_list) > 5:
+        send_message_list = [TextMessage(text=reply_message)]
 
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=reply_message)]
+                messages=send_message_list
             )
         )
+        # line_bot_api.push_message_with_http_info(
+        #     PushMessageRequest(
+        #         to=userId,
+        #         messages=[TextMessage(text="push message")]
+        #     )
+        # )
 
 def user_id_exists(user_id):
     # Check if user_id exists in the messages table
@@ -163,6 +178,21 @@ def get_messages_by_user_id(user_id):
     ).order_by(Message.timestamp).all()
 
     return messages
+
+def split_string_and_newline(input_string):
+    # 句点とハテナマークで改行する
+    newlined_text = re.sub(r'([。？])', r'\1\n', input_string)
+    
+    # 改行で文字列を分割してリストにする
+    result_list = newlined_text.split('\n')
+    
+    # 空白文字や空の文字列を取り除く
+    result_list = [s.strip() for s in result_list if s.strip()]
+
+    # 各要素から最後の句点を取り除く
+    result_list = [s[:-1] if s.endswith('。') else s for s in result_list]
+    
+    return result_list
 
 if __name__ == "__main__":
     app.run()
