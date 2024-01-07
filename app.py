@@ -115,7 +115,7 @@ def handle_message(event):
     messages_for_gpt.append({"role": "user", "content": prompt})
     
     client = openai.OpenAI(api_key=api_key)
-    gpt_model = "gpt-4"
+    gpt_model = "gpt-4-1106-preview"
     response = client.chat.completions.create(
                         model = gpt_model,
                         messages = messages_for_gpt,
